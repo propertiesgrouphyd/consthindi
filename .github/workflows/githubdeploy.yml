@@ -1,4 +1,5 @@
-name: VIDHWAAN STATE GITHUB PAGES DEPLOY
+
+name: VIDHWAAN STATE HINDI GITHUB PAGES DEPLOY
 
 on:
   workflow_dispatch:
@@ -9,14 +10,14 @@ permissions:
   id-token: write
 
 concurrency:
-  group: vidhwaan-state-github-pages
+  group: vidhwaan-state-hindi-github-pages
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      PROJECT_NAME: vidhwaan-state
+      PROJECT_NAME: vidhwaan-state-hindi
 
     steps:
       - name: Checkout Repository
@@ -45,12 +46,14 @@ jobs:
           set -euo pipefail
           npm ci
 
-      - name: Validate State Source
+      - name: Validate Hindi Source
         run: |
           set -euo pipefail
-          node --check generator.js
+
+          node --check generator-hindi.js
           node --check app.js
           node --check sw.js
+
           test -f index.html
           test -f main.css
           test -f app.js
@@ -60,30 +63,72 @@ jobs:
           test -f data/app-config.json
           test -f data/syllabus.json
           test -f data/constitutional-sources.json
+          test -d data/hi
           test -f icons/icon-192.png
           test -f icons/icon-512.png
           test -f icons/favicon.ico
           test -f icons/logo.png
+
+          if [ "$(cat CNAME)" != "statehindi.vidhwaan.com" ]; then
+            echo "ERROR: CNAME must contain statehindi.vidhwaan.com"
+            exit 1
+          fi
+
           echo "SOURCE VALIDATION: PASSED"
+
+      - name: Validate Hindi Lesson JSON
+        run: |
+          set -euo pipefail
+
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const dir = "data/hi";
+
+          const files = fs.readdirSync(dir)
+            .filter(f => /^day-\d{3}\.json$/.test(f))
+            .sort();
+
+          if (!files.length) {
+            throw new Error("No Hindi day-XXX.json files found in data/hi.");
+          }
+
+          for (const file of files) {
+            const content = fs.readFileSync(`${dir}/${file}`, "utf8");
+            const data = JSON.parse(content);
+
+            if (!data || typeof data !== "object") {
+              throw new Error(`Invalid lesson structure: ${file}`);
+            }
+
+            console.log(`Validated: ${file}`);
+          }
+
+          console.log(`Validated ${files.length} Hindi lesson files.`);
+          NODE
 
       - name: Prepare Production Dist
         run: |
           set -euo pipefail
+
           rm -rf dist
-          mkdir -p dist/data
+
+          mkdir -p dist/data/hi
           mkdir -p dist/icons
+
           cp index.html dist/index.html
           cp main.css dist/main.css
           cp app.js dist/app.js
           cp sw.js dist/sw.js
           cp manifest.json dist/manifest.json
           cp CNAME dist/CNAME
+
           cp icons/icon-192.png dist/icons/icon-192.png
           cp icons/icon-512.png dist/icons/icon-512.png
           cp icons/favicon.ico dist/icons/favicon.ico
           cp icons/logo.png dist/icons/logo.png
 
-      - name: Protect State Lesson Data
+      - name: Protect Hindi Lesson Data
         env:
           STATE_DATA_KEY: ${{ secrets.STATE_DATA_KEY }}
         run: |
@@ -99,59 +144,62 @@ jobs:
           import crypto from "node:crypto";
           import zlib from "node:zlib";
 
-          const key=process.env.STATE_DATA_KEY;
+          const key = process.env.STATE_DATA_KEY;
 
-          if(!/^[A-Za-z0-9+/]+={0,2}$/.test(key)){
+          if (!/^[A-Za-z0-9+/]+={0,2}$/.test(key)) {
             throw new Error("STATE_DATA_KEY is not valid Base64.");
           }
 
-          const keyBytes=Buffer.from(key,"base64");
+          const keyBytes = Buffer.from(key, "base64");
 
-          if(keyBytes.length!==32){
+          if (keyBytes.length !== 32) {
             throw new Error(
               `STATE_DATA_KEY must decode to exactly 32 bytes. Received ${keyBytes.length}.`
             );
           }
 
-          const sourceDir="data";
-          const outputDir="dist/data";
+          const sourceDir = "data/hi";
+          const outputDir = "dist/data/hi";
 
-          fs.mkdirSync(outputDir,{recursive:true});
+          fs.mkdirSync(outputDir, { recursive: true });
 
-          const files=fs.readdirSync(sourceDir)
-            .filter(f=>/^day-\d{3}\.json$/.test(f))
+          const files = fs.readdirSync(sourceDir)
+            .filter(f => /^day-\d{3}\.json$/.test(f))
             .sort();
 
-          if(!files.length){
-            throw new Error("No day-*.json lesson files found.");
+          if (!files.length) {
+            throw new Error("No Hindi day-*.json lesson files found.");
           }
 
-          for(const file of files){
-            const plaintext=fs.readFileSync(`${sourceDir}/${file}`);
-            const compressed=zlib.gzipSync(plaintext,{level:9});
+          for (const file of files) {
+            const plaintext = fs.readFileSync(`${sourceDir}/${file}`);
 
-            const iv=crypto.randomBytes(12);
+            const compressed = zlib.gzipSync(plaintext, {
+              level: 9
+            });
 
-            const cipher=crypto.createCipheriv(
+            const iv = crypto.randomBytes(12);
+
+            const cipher = crypto.createCipheriv(
               "aes-256-gcm",
               keyBytes,
               iv
             );
 
-            const encrypted=Buffer.concat([
+            const encrypted = Buffer.concat([
               cipher.update(compressed),
               cipher.final()
             ]);
 
-            const tag=cipher.getAuthTag();
+            const tag = cipher.getAuthTag();
 
-            const payload=Buffer.concat([
+            const payload = Buffer.concat([
               iv,
               encrypted,
               tag
             ]);
 
-            const output=file.replace(/\.json$/,".dat");
+            const output = file.replace(/\.json$/, ".dat");
 
             fs.writeFileSync(
               `${outputDir}/${output}`,
@@ -159,29 +207,35 @@ jobs:
             );
           }
 
-          console.log(`Protected ${files.length} lesson files.`);
+          console.log(`Protected ${files.length} Hindi lesson files.`);
           NODE
 
-          echo "Lesson data protection: PASSED"
+          echo "Hindi lesson data protection: PASSED"
 
       - name: Copy Static Data
         run: |
           set -euo pipefail
+
           cp data/app-config.json dist/data/app-config.json
           cp data/syllabus.json dist/data/syllabus.json
           cp data/constitutional-sources.json dist/data/constitutional-sources.json
 
-      - name: Remove Plaintext Lesson JSON
+      - name: Remove Plaintext Hindi Lesson JSON
         run: |
           set -euo pipefail
-          find dist/data -maxdepth 1 -type f -name 'day-*.json' -delete
 
-      - name: Verify Protected Lesson Data
+          find dist/data/hi \
+            -maxdepth 1 \
+            -type f \
+            -name 'day-*.json' \
+            -delete
+
+      - name: Verify Protected Hindi Lesson Data
         run: |
           set -euo pipefail
 
           SOURCE_COUNT=$(
-            find data \
+            find data/hi \
               -maxdepth 1 \
               -type f \
               -name 'day-*.json' \
@@ -189,7 +243,7 @@ jobs:
           )
 
           DAT_COUNT=$(
-            find dist/data \
+            find dist/data/hi \
               -maxdepth 1 \
               -type f \
               -name 'day-*.dat' \
@@ -197,33 +251,32 @@ jobs:
           )
 
           JSON_COUNT=$(
-            find dist/data \
-              -maxdepth 1 \
+            find dist \
               -type f \
               -name 'day-*.json' \
               | wc -l
           )
 
-          echo "Source lesson JSON files : $SOURCE_COUNT"
-          echo "Protected DAT files      : $DAT_COUNT"
+          echo "Hindi source lesson JSON : $SOURCE_COUNT"
+          echo "Protected Hindi DAT      : $DAT_COUNT"
           echo "Deployed lesson JSON     : $JSON_COUNT"
 
           if [ "$SOURCE_COUNT" -eq 0 ]; then
-            echo "ERROR: No source lesson JSON files found."
+            echo "ERROR: No Hindi source lesson files found."
             exit 1
           fi
 
           if [ "$DAT_COUNT" -ne "$SOURCE_COUNT" ]; then
-            echo "ERROR: Lesson protection count mismatch."
+            echo "ERROR: Hindi lesson protection count mismatch."
             exit 1
           fi
 
           if [ "$JSON_COUNT" -ne 0 ]; then
-            echo "ERROR: Plain lesson JSON files found."
+            echo "ERROR: Plain lesson JSON files found in dist."
             exit 1
           fi
 
-          echo "PROTECTED DATA VERIFICATION: PASSED"
+          echo "PROTECTED HINDI DATA VERIFICATION: PASSED"
 
       - name: Inject State Lesson Decryption Key
         env:
@@ -239,47 +292,47 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from "node:fs";
 
-          const file="dist/app.js";
-          const key=process.env.STATE_DATA_KEY;
-          const placeholder="__STATE_DATA_KEY__";
+          const file = "dist/app.js";
+          const key = process.env.STATE_DATA_KEY;
+          const placeholder = "__STATE_DATA_KEY__";
 
-          const source=fs.readFileSync(file,"utf8");
-          const occurrences=source.split(placeholder).length-1;
+          const source = fs.readFileSync(file, "utf8");
+          const occurrences = source.split(placeholder).length - 1;
 
-          if(occurrences!==1){
+          if (occurrences !== 1) {
             throw new Error(
               `Expected exactly one STATE_DATA_KEY placeholder. Found ${occurrences}.`
             );
           }
 
-          if(!/^[A-Za-z0-9+/]+={0,2}$/.test(key)){
+          if (!/^[A-Za-z0-9+/]+={0,2}$/.test(key)) {
             throw new Error("STATE_DATA_KEY is not valid Base64.");
           }
 
-          const keyBytes=Buffer.from(key,"base64");
+          const keyBytes = Buffer.from(key, "base64");
 
-          if(keyBytes.length!==32){
+          if (keyBytes.length !== 32) {
             throw new Error(
               `STATE_DATA_KEY must decode to exactly 32 bytes. Received ${keyBytes.length}.`
             );
           }
 
-          const updated=source.replace(
+          const updated = source.replace(
             `"${placeholder}"`,
             JSON.stringify(key)
           );
 
-          if(updated===source){
+          if (updated === source) {
             throw new Error("STATE_DATA_KEY placeholder replacement failed.");
           }
 
-          if(updated.includes(placeholder)){
+          if (updated.includes(placeholder)) {
             throw new Error(
               "STATE_DATA_KEY placeholder still exists after injection."
             );
           }
 
-          fs.writeFileSync(file,updated,"utf8");
+          fs.writeFileSync(file, updated, "utf8");
 
           console.log("STATE_DATA_KEY injected successfully.");
           NODE
@@ -296,12 +349,13 @@ jobs:
             -o dist/main.css
 
           node <<'NODE'
-          const fs=require("fs");
-          const file="dist/main.css";
-          const source=fs.readFileSync(file,"utf8");
+          const fs = require("fs");
+          const file = "dist/main.css";
+          const source = fs.readFileSync(file, "utf8");
+
           fs.writeFileSync(
             file,
-            source.replace(/\r?\n|\r/g,"").trim(),
+            source.replace(/\r?\n|\r/g, "").trim(),
             "utf8"
           );
           NODE
@@ -309,6 +363,7 @@ jobs:
       - name: Minify JavaScript
         run: |
           set -euo pipefail
+
           terser \
             dist/app.js \
             --compress \
@@ -361,18 +416,18 @@ jobs:
           set -euo pipefail
 
           node <<'NODE'
-          const fs=require("fs");
+          const fs = require("fs");
 
-          const files=[
+          const files = [
             "dist/manifest.json",
             "dist/data/app-config.json",
             "dist/data/syllabus.json",
             "dist/data/constitutional-sources.json"
           ];
 
-          for(const file of files){
-            const data=JSON.parse(
-              fs.readFileSync(file,"utf8")
+          for (const file of files) {
+            const data = JSON.parse(
+              fs.readFileSync(file, "utf8")
             );
 
             fs.writeFileSync(
@@ -386,6 +441,7 @@ jobs:
       - name: Generate Asset Version
         run: |
           set -euo pipefail
+
           VERSION=$(date +%s)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
@@ -422,12 +478,13 @@ jobs:
             -o dist/index.html
 
           node <<'NODE'
-          const fs=require("fs");
-          const file="dist/index.html";
-          const source=fs.readFileSync(file,"utf8");
+          const fs = require("fs");
+          const file = "dist/index.html";
+          const source = fs.readFileSync(file, "utf8");
+
           fs.writeFileSync(
             file,
-            source.replace(/\r?\n|\r/g,"").trim(),
+            source.replace(/\r?\n|\r/g, "").trim(),
             "utf8"
           );
           NODE
@@ -437,16 +494,16 @@ jobs:
           set -euo pipefail
 
           node <<'NODE'
-          const fs=require("fs");
+          const fs = require("fs");
 
-          for(const file of [
+          for (const file of [
             "dist/index.html",
             "dist/main.css"
-          ]){
-            const data=fs.readFileSync(file);
+          ]) {
+            const data = fs.readFileSync(file);
 
-            for(const byte of data){
-              if(byte===10||byte===13){
+            for (const byte of data) {
+              if (byte === 10 || byte === 13) {
                 throw new Error(
                   `${file} contains newline characters.`
                 );
@@ -475,8 +532,13 @@ jobs:
           test -f dist/icons/favicon.ico
           test -f dist/icons/logo.png
 
+          if [ "$(cat dist/CNAME)" != "statehindi.vidhwaan.com" ]; then
+            echo "ERROR: Incorrect deployed domain."
+            exit 1
+          fi
+
           SOURCE_COUNT=$(
-            find data \
+            find data/hi \
               -maxdepth 1 \
               -type f \
               -name 'day-*.json' \
@@ -484,7 +546,7 @@ jobs:
           )
 
           DAT_COUNT=$(
-            find dist/data \
+            find dist/data/hi \
               -maxdepth 1 \
               -type f \
               -name 'day-*.dat' \
@@ -499,12 +561,12 @@ jobs:
           )
 
           if [ "$SOURCE_COUNT" -eq 0 ]; then
-            echo "ERROR: No source lesson files found."
+            echo "ERROR: No Hindi source lesson files found."
             exit 1
           fi
 
           if [ "$DAT_COUNT" -ne "$SOURCE_COUNT" ]; then
-            echo "ERROR: DAT count mismatch."
+            echo "ERROR: Hindi DAT count mismatch."
             exit 1
           fi
 
@@ -512,6 +574,10 @@ jobs:
             echo "ERROR: Plain lesson JSON found in dist."
             exit 1
           fi
+
+          test -f dist/data/hi/day-001.dat
+
+          grep -F "./data/hi/day-" dist/app.js
 
           grep -F "./app.js?v=${VERSION}" dist/index.html
           grep -F "./main.css?v=${VERSION}" dist/index.html
@@ -535,11 +601,12 @@ jobs:
           fi
 
           echo "============================================================"
-          echo " VIDHWAAN STATE — PRODUCTION BUILD PASSED"
+          echo " VIDHWAAN STATE HINDI — PRODUCTION BUILD PASSED"
           echo "============================================================"
-          echo "Protected lessons : $DAT_COUNT"
-          echo "Plain lessons      : 0"
-          echo "Deployment         : GitHub Pages"
+          echo "Protected Hindi lessons : $DAT_COUNT"
+          echo "Plain lessons             : 0"
+          echo "Deployment                : GitHub Pages"
+          echo "Domain                    : statehindi.vidhwaan.com"
           echo "============================================================"
 
       - name: Configure GitHub Pages
@@ -557,8 +624,8 @@ jobs:
       - name: Deployment Success
         run: |
           echo "============================================================"
-          echo " VIDHWAAN STATE — GITHUB PAGES DEPLOYMENT SUCCESS"
+          echo " VIDHWAAN STATE HINDI — GITHUB PAGES DEPLOYMENT SUCCESS"
           echo "============================================================"
           echo "Deployment : GitHub Pages"
-          echo "Domain     : state.vidhwaan.com"
+          echo "Domain     : statehindi.vidhwaan.com"
           echo "============================================================"
