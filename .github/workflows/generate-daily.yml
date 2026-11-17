@@ -1,7 +1,7 @@
-name: Constitution 365 Daily Generator
+
+name: Constitution 365 Hindi Daily Generator
 
 on:
-
   workflow_dispatch:
     inputs:
       day:
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: constitution-365-generator
+  group: constitution-365-hindi-generator
   cancel-in-progress: false
 
 jobs:
@@ -29,7 +29,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-
       # ============================================================
       # NODE.JS
       # ============================================================
@@ -39,7 +38,6 @@ jobs:
         with:
           node-version: 22
 
-
       # ============================================================
       # DETERMINE CONSTITUTION 365 DAY
       # ============================================================
@@ -47,17 +45,19 @@ jobs:
       - name: Determine Day
         id: day
         shell: bash
+        env:
+          INPUT_DAY: ${{ inputs.day }}
         run: |
           set -euo pipefail
 
-          if [ -n "${{ inputs.day }}" ]; then
-            DAY="${{ inputs.day }}"
+          if [ -n "$INPUT_DAY" ]; then
+            DAY="$INPUT_DAY"
           else
             START_DATE="2026-10-06"
             TODAY=$(TZ=Asia/Kolkata date +%Y-%m-%d)
 
-            START_TS=$(date -d "$START_DATE" +%s)
-            TODAY_TS=$(date -d "$TODAY" +%s)
+            START_TS=$(date -u -d "$START_DATE" +%s)
+            TODAY_TS=$(date -u -d "$TODAY" +%s)
 
             DAY=$(( (TODAY_TS - START_TS) / 86400 + 1 ))
           fi
@@ -73,11 +73,11 @@ jobs:
           fi
 
           echo "=========================================="
-          echo "CONSTITUTION 365"
+          echo "CONSTITUTION 365 - HINDI"
           echo "=========================================="
           echo "Generating Day: $DAY"
 
-          if [ -z "${{ inputs.day }}" ]; then
+          if [ -z "$INPUT_DAY" ]; then
             echo "Mode: Automatic"
             echo "IST Date: $TODAY"
             echo "Start Date: $START_DATE"
@@ -89,12 +89,11 @@ jobs:
 
           echo "day=$DAY" >> "$GITHUB_OUTPUT"
 
-
       # ============================================================
-      # GENERATE DAILY CONSTITUTION CONTENT
+      # GENERATE HINDI CONSTITUTION CONTENT
       # ============================================================
 
-      - name: Generate Daily Constitution Content
+      - name: Generate Hindi Constitution Content
         env:
           DAY: ${{ steps.day.outputs.day }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -102,20 +101,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          node generator.js
-
+          node generator-hindi.js
 
       # ============================================================
-      # VERIFY GENERATED JSON
+      # VERIFY GENERATED HINDI JSON
       # ============================================================
 
-      - name: Verify Generated JSON
+      - name: Verify Generated Hindi JSON
         shell: bash
+        env:
+          DAY: ${{ steps.day.outputs.day }}
         run: |
           set -euo pipefail
 
-          DAY="${{ steps.day.outputs.day }}"
-          FILE="data/day-$(printf '%03d' "$DAY").json"
+          FILE="data/hi/day-$(printf '%03d' "$DAY").json"
 
           echo "Verifying: $FILE"
 
@@ -138,7 +137,7 @@ jobs:
             throw new Error(message);
           }
 
-          if (!x || typeof x !== "object") {
+          if (!x || typeof x !== "object" || Array.isArray(x)) {
             fail("Generated JSON is not an object");
           }
 
@@ -165,15 +164,79 @@ jobs:
             }
           }
 
+          // Check Hindi / Devanagari text.
+
+          function validateHindi(value, label) {
+            if (typeof value !== "string" || !value.trim()) {
+              fail(`${label}: empty or invalid text`);
+            }
+
+            if (!/[\u0900-\u097F]/u.test(value)) {
+              fail(`${label}: Hindi Devanagari text missing`);
+            }
+
+            if (/[A-Za-z]/u.test(value)) {
+              fail(`${label}: English alphabet characters found`);
+            }
+
+            if (
+              /[\u0400-\u04FF\u0370-\u03FF\u0590-\u05FF\u0600-\u06FF\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0CFF\u0D00-\u0D7F\u0E00-\u0E7F\u0E80-\u0EFF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/u.test(value)
+            ) {
+              fail(`${label}: forbidden foreign script found`);
+            }
+
+            if (value.includes("\uFFFD")) {
+              fail(`${label}: replacement character found`);
+            }
+
+            if (value.includes("\\")) {
+              fail(`${label}: backslash found`);
+            }
+          }
+
+          for (const field of requiredStrings) {
+            validateHindi(x[field], field);
+          }
+
           if (x.lesson.trim().length < 500) {
             fail("Lesson is too short");
           }
 
+          const paragraphs = x.lesson
+            .trim()
+            .split(/\n\s*\n/)
+            .filter(p => p.trim());
+
+          if (paragraphs.length < 5 || paragraphs.length > 10) {
+            fail("Lesson must contain 5-10 paragraphs");
+          }
+
           if (
             !Array.isArray(x.examples) ||
-            x.examples.length < 2
+            x.examples.length < 3 ||
+            x.examples.length > 8
           ) {
-            fail("Missing examples");
+            fail("There must be 3-8 examples");
+          }
+
+          x.examples.forEach((example, i) => {
+            validateHindi(example, `Example ${i + 1}`);
+
+            if (example.trim().length < 20) {
+              fail(`Example ${i + 1} is too short`);
+            }
+          });
+
+          if (x.why_it_matters.trim().length < 100) {
+            fail("why_it_matters is too short");
+          }
+
+          if (x.common_misunderstanding.trim().length < 50) {
+            fail("common_misunderstanding is too short");
+          }
+
+          if (x.reflection.trim().length < 20) {
+            fail("Reflection is too short");
           }
 
           if (
@@ -184,6 +247,7 @@ jobs:
           }
 
           x.mcqs.forEach((m, i) => {
+            const label = `MCQ ${i + 1}`;
 
             if (
               !m ||
@@ -193,28 +257,31 @@ jobs:
               typeof m.answer !== "string" ||
               typeof m.explanation !== "string"
             ) {
-              fail(`Invalid MCQ ${i + 1}`);
+              fail(`${label}: invalid structure`);
             }
 
-            const uniqueOptions =
-              new Set(m.options);
+            validateHindi(m.question, `${label} question`);
+            validateHindi(m.answer, `${label} answer`);
+            validateHindi(m.explanation, `${label} explanation`);
+
+            m.options.forEach((option, j) => {
+              validateHindi(option, `${label} option ${j + 1}`);
+            });
+
+            const uniqueOptions = new Set(
+              m.options.map(option => option.trim())
+            );
 
             if (uniqueOptions.size !== 4) {
-              fail(
-                `MCQ ${i + 1} has duplicate options`
-              );
+              fail(`${label}: duplicate options`);
             }
 
             if (!m.options.includes(m.answer)) {
-              fail(
-                `MCQ ${i + 1} answer mismatch`
-              );
+              fail(`${label}: answer mismatch`);
             }
 
-            if (!m.explanation.trim()) {
-              fail(
-                `MCQ ${i + 1} explanation missing`
-              );
+            if (m.explanation.trim().length < 20) {
+              fail(`${label}: explanation too short`);
             }
           });
 
@@ -222,71 +289,66 @@ jobs:
             !x.constitutional_reference ||
             typeof x.constitutional_reference !== "object"
           ) {
-            fail(
-              "Missing constitutional_reference"
-            );
+            fail("Missing constitutional_reference");
           }
 
-          if (
-            !Array.isArray(
-              x.constitutional_reference.articles
-            ) ||
-            !Array.isArray(
-              x.constitutional_reference.parts
-            ) ||
-            !Array.isArray(
-              x.constitutional_reference.references
-            )
-          ) {
-            fail(
-              "Invalid constitutional_reference"
-            );
+          for (const field of [
+            "articles",
+            "parts",
+            "references"
+          ]) {
+            if (!Array.isArray(x.constitutional_reference[field])) {
+              fail(`Invalid constitutional_reference.${field}`);
+            }
           }
 
           if (
             !x.source_metadata ||
-            !Array.isArray(
-              x.source_metadata.source_layers
-            )
+            !Array.isArray(x.source_metadata.source_layers) ||
+            !Array.isArray(x.source_metadata.source_files)
           ) {
-            fail(
-              "Missing source_metadata"
-            );
+            fail("Missing or invalid source_metadata");
           }
 
-          console.log(
-            "JSON verification passed:",
-            file
-          );
+          if (Number(x.source_metadata.source_day) !== expectedDay) {
+            fail("Source metadata day mismatch");
+          }
 
-          console.log(
-            "Day:",
-            x.day
-          );
+          if (
+            x.source_metadata.source_status !==
+            "validated-before-generation"
+          ) {
+            fail("Source validation status mismatch");
+          }
 
-          console.log(
-            "MCQs:",
-            x.mcqs.length
-          );
-
+          console.log("==========================================");
+          console.log("HINDI JSON VERIFICATION PASSED");
+          console.log("==========================================");
+          console.log("File:", file);
+          console.log("Day:", x.day);
+          console.log("Examples:", x.examples.length);
+          console.log("MCQs:", x.mcqs.length);
+          console.log("Paragraphs:", paragraphs.length);
           console.log(
             "Source layers:",
             x.source_metadata.source_layers.join(", ")
           );
+          console.log("Hindi validation: PASSED");
+          console.log("==========================================");
           NODE
 
-
       # ============================================================
-      # COMMIT DAILY JSON
+      # COMMIT HINDI DAILY JSON
       # ============================================================
 
-      - name: Commit Daily JSON
+      - name: Commit Hindi Daily JSON
         shell: bash
+        env:
+          DAY: ${{ steps.day.outputs.day }}
         run: |
           set -euo pipefail
 
-          DAY="${{ steps.day.outputs.day }}"
-          FILE="data/day-$(printf '%03d' "$DAY").json"
+          FILE="data/hi/day-$(printf '%03d' "$DAY").json"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -299,6 +361,6 @@ jobs:
           fi
 
           git commit \
-            -m "Generate Constitution 365 Day $DAY"
+            -m "Generate Constitution 365 Hindi Day $DAY"
 
           git push
