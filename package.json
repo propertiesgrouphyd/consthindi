@@ -1,0 +1,12 @@
+{
+  "name": "vidhwaan-state",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -m http.server 8080 -d .",
+    "start": "python3 -m http.server 8080 -d .",
+    "generate:day": "node generator.js",
+    "validate": "node generator.js --validate",
+    "validate:syllabus": "node -e \"const fs=require('fs'); JSON.parse(fs.readFileSync('data/syllabus.json','utf8')); console.log('syllabus.json: OK')\""
+  }
+}
