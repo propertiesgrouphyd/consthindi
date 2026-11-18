@@ -13,11 +13,18 @@ concurrency:
   group: vidhwaan-state-hindi-github-pages
   cancel-in-progress: true
 
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     env:
       PROJECT_NAME: vidhwaan-state-hindi
+
 
     steps:
       - name: Checkout Repository
