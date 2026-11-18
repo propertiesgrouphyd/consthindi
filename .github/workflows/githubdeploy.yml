@@ -13,7 +13,6 @@ concurrency:
   group: vidhwaan-state-hindi-github-pages
   cancel-in-progress: true
 
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -25,10 +24,17 @@ jobs:
     env:
       PROJECT_NAME: vidhwaan-state-hindi
 
-
     steps:
+      # --------------------------------------------------
+      # CHECKOUT
+      # --------------------------------------------------
+
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # NODE.JS
+      # --------------------------------------------------
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,13 +42,19 @@ jobs:
           node-version: 24
           cache: npm
 
+      # --------------------------------------------------
+      # INSTALL TOOLS
+      # --------------------------------------------------
+
       - name: Install Production Tools
         run: |
           set -euo pipefail
+
           npm install -g terser
           npm install -g javascript-obfuscator
           npm install -g clean-css-cli
           npm install -g html-minifier-terser
+
           terser --version
           javascript-obfuscator --version
           cleancss --version
@@ -52,6 +64,10 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
+
+      # --------------------------------------------------
+      # VALIDATE SOURCE FILES
+      # --------------------------------------------------
 
       - name: Validate Hindi Source
         run: |
@@ -67,21 +83,28 @@ jobs:
           test -f sw.js
           test -f manifest.json
           test -f CNAME
+
           test -f data/app-config.json
           test -f data/syllabus.json
           test -f data/constitutional-sources.json
+
           test -d data/hi
+
           test -f icons/icon-192.png
           test -f icons/icon-512.png
           test -f icons/favicon.ico
           test -f icons/logo.png
 
-          if [ "$(cat CNAME)" != "statehindi.vidhwaan.com" ]; then
+          if [ "$(tr -d '\r\n' < CNAME)" != "statehindi.vidhwaan.com" ]; then
             echo "ERROR: CNAME must contain statehindi.vidhwaan.com"
             exit 1
           fi
 
           echo "SOURCE VALIDATION: PASSED"
+
+      # --------------------------------------------------
+      # VALIDATE HINDI LESSON JSON
+      # --------------------------------------------------
 
       - name: Validate Hindi Lesson JSON
         run: |
@@ -97,22 +120,40 @@ jobs:
             .sort();
 
           if (!files.length) {
-            throw new Error("No Hindi day-XXX.json files found in data/hi.");
+            throw new Error(
+              "No Hindi day-XXX.json files found in data/hi."
+            );
           }
 
           for (const file of files) {
-            const content = fs.readFileSync(`${dir}/${file}`, "utf8");
+            const content = fs.readFileSync(
+              `${dir}/${file}`,
+              "utf8"
+            );
+
             const data = JSON.parse(content);
 
-            if (!data || typeof data !== "object") {
-              throw new Error(`Invalid lesson structure: ${file}`);
+            if (
+              !data ||
+              typeof data !== "object" ||
+              Array.isArray(data)
+            ) {
+              throw new Error(
+                `Invalid lesson structure: ${file}`
+              );
             }
 
             console.log(`Validated: ${file}`);
           }
 
-          console.log(`Validated ${files.length} Hindi lesson files.`);
+          console.log(
+            `Validated ${files.length} Hindi lesson files.`
+          );
           NODE
+
+      # --------------------------------------------------
+      # PREPARE DIST
+      # --------------------------------------------------
 
       - name: Prepare Production Dist
         run: |
@@ -135,6 +176,11 @@ jobs:
           cp icons/favicon.ico dist/icons/favicon.ico
           cp icons/logo.png dist/icons/logo.png
 
+      # --------------------------------------------------
+      # ENCRYPT HINDI LESSON DATA
+      # AES-256-GCM + GZIP
+      # --------------------------------------------------
+
       - name: Protect Hindi Lesson Data
         env:
           STATE_DATA_KEY: ${{ secrets.STATE_DATA_KEY }}
@@ -154,7 +200,9 @@ jobs:
           const key = process.env.STATE_DATA_KEY;
 
           if (!/^[A-Za-z0-9+/]+={0,2}$/.test(key)) {
-            throw new Error("STATE_DATA_KEY is not valid Base64.");
+            throw new Error(
+              "STATE_DATA_KEY is not valid Base64."
+            );
           }
 
           const keyBytes = Buffer.from(key, "base64");
@@ -168,22 +216,31 @@ jobs:
           const sourceDir = "data/hi";
           const outputDir = "dist/data/hi";
 
-          fs.mkdirSync(outputDir, { recursive: true });
+          fs.mkdirSync(outputDir, {
+            recursive: true
+          });
 
           const files = fs.readdirSync(sourceDir)
             .filter(f => /^day-\d{3}\.json$/.test(f))
             .sort();
 
           if (!files.length) {
-            throw new Error("No Hindi day-*.json lesson files found.");
+            throw new Error(
+              "No Hindi day-*.json lesson files found."
+            );
           }
 
           for (const file of files) {
-            const plaintext = fs.readFileSync(`${sourceDir}/${file}`);
+            const plaintext = fs.readFileSync(
+              `${sourceDir}/${file}`
+            );
 
-            const compressed = zlib.gzipSync(plaintext, {
-              level: 9
-            });
+            const compressed = zlib.gzipSync(
+              plaintext,
+              {
+                level: 9
+              }
+            );
 
             const iv = crypto.randomBytes(12);
 
@@ -206,7 +263,10 @@ jobs:
               tag
             ]);
 
-            const output = file.replace(/\.json$/, ".dat");
+            const output = file.replace(
+              /\.json$/,
+              ".dat"
+            );
 
             fs.writeFileSync(
               `${outputDir}/${output}`,
@@ -214,18 +274,30 @@ jobs:
             );
           }
 
-          console.log(`Protected ${files.length} Hindi lesson files.`);
+          console.log(
+            `Protected ${files.length} Hindi lesson files.`
+          );
           NODE
 
           echo "Hindi lesson data protection: PASSED"
+
+      # --------------------------------------------------
+      # COPY SHARED STATIC DATA
+      # --------------------------------------------------
 
       - name: Copy Static Data
         run: |
           set -euo pipefail
 
+          mkdir -p dist/data
+
           cp data/app-config.json dist/data/app-config.json
           cp data/syllabus.json dist/data/syllabus.json
           cp data/constitutional-sources.json dist/data/constitutional-sources.json
+
+      # --------------------------------------------------
+      # REMOVE PLAINTEXT HINDI JSON
+      # --------------------------------------------------
 
       - name: Remove Plaintext Hindi Lesson JSON
         run: |
@@ -236,6 +308,10 @@ jobs:
             -type f \
             -name 'day-*.json' \
             -delete
+
+      # --------------------------------------------------
+      # VERIFY ENCRYPTED DATA
+      # --------------------------------------------------
 
       - name: Verify Protected Hindi Lesson Data
         run: |
@@ -285,6 +361,10 @@ jobs:
 
           echo "PROTECTED HINDI DATA VERIFICATION: PASSED"
 
+      # --------------------------------------------------
+      # INJECT DECRYPTION KEY
+      # --------------------------------------------------
+
       - name: Inject State Lesson Decryption Key
         env:
           STATE_DATA_KEY: ${{ secrets.STATE_DATA_KEY }}
@@ -303,8 +383,13 @@ jobs:
           const key = process.env.STATE_DATA_KEY;
           const placeholder = "__STATE_DATA_KEY__";
 
-          const source = fs.readFileSync(file, "utf8");
-          const occurrences = source.split(placeholder).length - 1;
+          const source = fs.readFileSync(
+            file,
+            "utf8"
+          );
+
+          const occurrences =
+            source.split(placeholder).length - 1;
 
           if (occurrences !== 1) {
             throw new Error(
@@ -313,7 +398,9 @@ jobs:
           }
 
           if (!/^[A-Za-z0-9+/]+={0,2}$/.test(key)) {
-            throw new Error("STATE_DATA_KEY is not valid Base64.");
+            throw new Error(
+              "STATE_DATA_KEY is not valid Base64."
+            );
           }
 
           const keyBytes = Buffer.from(key, "base64");
@@ -330,7 +417,9 @@ jobs:
           );
 
           if (updated === source) {
-            throw new Error("STATE_DATA_KEY placeholder replacement failed.");
+            throw new Error(
+              "STATE_DATA_KEY placeholder replacement failed."
+            );
           }
 
           if (updated.includes(placeholder)) {
@@ -339,12 +428,37 @@ jobs:
             );
           }
 
-          fs.writeFileSync(file, updated, "utf8");
+          fs.writeFileSync(
+            file,
+            updated,
+            "utf8"
+          );
 
-          console.log("STATE_DATA_KEY injected successfully.");
+          console.log(
+            "STATE_DATA_KEY injected successfully."
+          );
           NODE
 
           node --check dist/app.js
+
+      # --------------------------------------------------
+      # VERIFY HINDI DATA PATH BEFORE OBFUSCATION
+      # --------------------------------------------------
+
+      - name: Verify Hindi Data Path Before Obfuscation
+        run: |
+          set -euo pipefail
+
+          if ! grep -Fq './data/hi/day-' dist/app.js; then
+            echo "ERROR: Hindi encrypted lesson path is missing from app.js."
+            exit 1
+          fi
+
+          echo "HINDI DATA PATH VERIFICATION: PASSED"
+
+      # --------------------------------------------------
+      # MINIFY CSS
+      # --------------------------------------------------
 
       - name: Minify CSS
         run: |
@@ -357,8 +471,13 @@ jobs:
 
           node <<'NODE'
           const fs = require("fs");
+
           const file = "dist/main.css";
-          const source = fs.readFileSync(file, "utf8");
+
+          const source = fs.readFileSync(
+            file,
+            "utf8"
+          );
 
           fs.writeFileSync(
             file,
@@ -366,6 +485,10 @@ jobs:
             "utf8"
           );
           NODE
+
+      # --------------------------------------------------
+      # MINIFY JAVASCRIPT
+      # --------------------------------------------------
 
       - name: Minify JavaScript
         run: |
@@ -376,6 +499,10 @@ jobs:
             --compress \
             --mangle \
             -o dist/app.js
+
+      # --------------------------------------------------
+      # OBFUSCATE JAVASCRIPT
+      # --------------------------------------------------
 
       - name: Obfuscate JavaScript
         run: |
@@ -396,6 +523,10 @@ jobs:
             --string-array-encoding base64 \
             --string-array-threshold 0.75
 
+      # --------------------------------------------------
+      # VERIFY KEY INJECTION
+      # --------------------------------------------------
+
       - name: Verify State Decryption Key Injection
         run: |
           set -euo pipefail
@@ -407,6 +538,10 @@ jobs:
 
           echo "DECRYPTION KEY VERIFICATION: PASSED"
 
+      # --------------------------------------------------
+      # MINIFY SERVICE WORKER
+      # --------------------------------------------------
+
       - name: Minify Service Worker
         run: |
           set -euo pipefail
@@ -417,6 +552,10 @@ jobs:
             --mangle \
             --format comments=false \
             -o dist/sw.js
+
+      # --------------------------------------------------
+      # MINIFY JSON FILES
+      # --------------------------------------------------
 
       - name: Minify JSON
         run: |
@@ -445,12 +584,21 @@ jobs:
           }
           NODE
 
+      # --------------------------------------------------
+      # GENERATE ASSET VERSION
+      # --------------------------------------------------
+
       - name: Generate Asset Version
         run: |
           set -euo pipefail
 
           VERSION=$(date +%s)
+
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # --------------------------------------------------
+      # CACHE BUSTING
+      # --------------------------------------------------
 
       - name: Apply Asset Cache Busting
         run: |
@@ -467,6 +615,10 @@ jobs:
           sed -i \
             "s|href=\"./manifest.json\"|href=\"./manifest.json?v=$VERSION\"|g" \
             dist/index.html
+
+      # --------------------------------------------------
+      # MINIFY HTML
+      # --------------------------------------------------
 
       - name: Minify HTML
         run: |
@@ -486,8 +638,13 @@ jobs:
 
           node <<'NODE'
           const fs = require("fs");
+
           const file = "dist/index.html";
-          const source = fs.readFileSync(file, "utf8");
+
+          const source = fs.readFileSync(
+            file,
+            "utf8"
+          );
 
           fs.writeFileSync(
             file,
@@ -495,6 +652,10 @@ jobs:
             "utf8"
           );
           NODE
+
+      # --------------------------------------------------
+      # VERIFY HTML AND CSS
+      # --------------------------------------------------
 
       - name: Verify HTML And CSS Single Line
         run: |
@@ -521,6 +682,10 @@ jobs:
           }
           NODE
 
+      # --------------------------------------------------
+      # FINAL PRODUCTION VERIFICATION
+      # --------------------------------------------------
+
       - name: Final Production Verification
         run: |
           set -euo pipefail
@@ -531,15 +696,17 @@ jobs:
           test -f dist/app.js
           test -f dist/main.css
           test -f dist/CNAME
+
           test -f dist/data/app-config.json
           test -f dist/data/syllabus.json
           test -f dist/data/constitutional-sources.json
+
           test -f dist/icons/icon-192.png
           test -f dist/icons/icon-512.png
           test -f dist/icons/favicon.ico
           test -f dist/icons/logo.png
 
-          if [ "$(cat dist/CNAME)" != "statehindi.vidhwaan.com" ]; then
+          if [ "$(tr -d '\r\n' < dist/CNAME)" != "statehindi.vidhwaan.com" ]; then
             echo "ERROR: Incorrect deployed domain."
             exit 1
           fi
@@ -567,6 +734,10 @@ jobs:
               | wc -l
           )
 
+          echo "Hindi source lesson JSON : $SOURCE_COUNT"
+          echo "Protected Hindi DAT      : $DAT_COUNT"
+          echo "Deployed lesson JSON     : $JSON_COUNT"
+
           if [ "$SOURCE_COUNT" -eq 0 ]; then
             echo "ERROR: No Hindi source lesson files found."
             exit 1
@@ -583,8 +754,6 @@ jobs:
           fi
 
           test -f dist/data/hi/day-001.dat
-
-          grep -F "./data/hi/day-" dist/app.js
 
           grep -F "./app.js?v=${VERSION}" dist/index.html
           grep -F "./main.css?v=${VERSION}" dist/index.html
@@ -611,22 +780,38 @@ jobs:
           echo " VIDHWAAN STATE HINDI — PRODUCTION BUILD PASSED"
           echo "============================================================"
           echo "Protected Hindi lessons : $DAT_COUNT"
-          echo "Plain lessons             : 0"
-          echo "Deployment                : GitHub Pages"
-          echo "Domain                    : statehindi.vidhwaan.com"
+          echo "Plain lessons            : 0"
+          echo "Deployment               : GitHub Pages"
+          echo "Domain                   : statehindi.vidhwaan.com"
           echo "============================================================"
+
+      # --------------------------------------------------
+      # CONFIGURE GITHUB PAGES
+      # --------------------------------------------------
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+
+      # --------------------------------------------------
+      # UPLOAD DEPLOYMENT ARTIFACT
+      # --------------------------------------------------
 
       - name: Upload GitHub Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
+      # --------------------------------------------------
+      # DEPLOY
+      # --------------------------------------------------
+
       - name: Deploy To GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # --------------------------------------------------
+      # SUCCESS
+      # --------------------------------------------------
 
       - name: Deployment Success
         run: |
